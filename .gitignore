@@ -1,0 +1,21 @@
+# Python Environments
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# [cite_start]RAGSmith Database [cite: 23]
+*.sqlite
+*.db
+
+# [cite_start]RAGSmith Vector Indexes [cite: 46, 54, 71]
+faiss.index
+*.index
+
+# [cite_start]RAGSmith Local Chunk Persistence [cite: 47, 55, 72]
+chunks.pkl
+*.pkl
+
+# [cite_start]RAGSmith Downloaded Embedding Models [cite: 29, 73]
+embedding_model/
