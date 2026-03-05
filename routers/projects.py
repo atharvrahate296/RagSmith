@@ -1,6 +1,6 @@
 """
 RAGSmith – Projects router
-CRUD for RAG projects.
+CRUD for RAG projects. Uses db helpers for SQLite/Postgres compatibility.
 """
 
 import logging
@@ -8,7 +8,7 @@ from typing import List
 
 from fastapi import APIRouter, HTTPException, status
 
-from database import get_connection
+from database import get_connection, db_execute, db_fetchone, db_fetchall, db_insert, ph
 from models.schemas import ProjectCreate, ProjectUpdate, ProjectResponse
 from services.processor import delete_project_index
 
@@ -16,16 +16,16 @@ router = APIRouter()
 logger = logging.getLogger("ragsmith.projects")
 
 
-def _row_to_project(row, doc_count: int = 0) -> ProjectResponse:
+def _to_response(row: dict) -> ProjectResponse:
     return ProjectResponse(
         id=row["id"],
         name=row["name"],
-        description=row["description"] or "",
+        description=row.get("description") or "",
         model=row["model"],
         top_k=row["top_k"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-        document_count=doc_count,
+        created_at=str(row["created_at"]),
+        updated_at=str(row["updated_at"]),
+        document_count=row.get("doc_count", 0),
     )
 
 
@@ -33,16 +33,14 @@ def _row_to_project(row, doc_count: int = 0) -> ProjectResponse:
 def list_projects():
     conn = get_connection()
     try:
-        rows = conn.execute(
-            """
+        rows = db_fetchall(conn, """
             SELECT p.*, COUNT(d.id) as doc_count
             FROM projects p
             LEFT JOIN documents d ON d.project_id = p.id
             GROUP BY p.id
             ORDER BY p.created_at DESC
-            """
-        ).fetchall()
-        return [_row_to_project(r, r["doc_count"]) for r in rows]
+        """)
+        return [_to_response(r) for r in rows]
     finally:
         conn.close()
 
@@ -51,27 +49,22 @@ def list_projects():
 def create_project(body: ProjectCreate):
     conn = get_connection()
     try:
-        existing = conn.execute(
-            "SELECT id FROM projects WHERE name = ?", (body.name,)
-        ).fetchone()
+        from config import get_settings
+        cfg = get_settings()
+        default_model = cfg.effective_llm_model  # llama-3.1-8b-instant for groq, mistral for ollama
+
+        existing = db_fetchone(conn, f"SELECT id FROM projects WHERE name={ph()}", (body.name,))
         if existing:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Project '{body.name}' already exists.",
-            )
-        cur = conn.execute(
-            """
-            INSERT INTO projects (name, description, model, top_k)
-            VALUES (?, ?, ?, ?)
-            """,
-            (body.name, body.description or "", body.model or "mistral", body.top_k or 5),
-        )
-        conn.commit()
-        row = conn.execute(
-            "SELECT *, 0 as doc_count FROM projects WHERE id = ?", (cur.lastrowid,)
-        ).fetchone()
-        logger.info("Created project '%s' (id=%d)", body.name, cur.lastrowid)
-        return _row_to_project(row, 0)
+            raise HTTPException(status_code=409, detail=f"Project '{body.name}' already exists.")
+
+        effective_model = body.model or default_model
+        doc_id = db_insert(conn,
+            f"INSERT INTO projects (name, description, model, top_k) VALUES ({ph()},{ph()},{ph()},{ph()})",
+            (body.name, body.description or "", effective_model, body.top_k or 5))
+
+        row = db_fetchone(conn, f"SELECT *, 0 as doc_count FROM projects WHERE id={ph()}", (doc_id,))
+        logger.info("Created project '%s' (id=%d)", body.name, doc_id)
+        return _to_response(row)
     finally:
         conn.close()
 
@@ -80,19 +73,16 @@ def create_project(body: ProjectCreate):
 def get_project(project_id: int):
     conn = get_connection()
     try:
-        row = conn.execute(
-            """
+        row = db_fetchone(conn, f"""
             SELECT p.*, COUNT(d.id) as doc_count
             FROM projects p
             LEFT JOIN documents d ON d.project_id = p.id
-            WHERE p.id = ?
+            WHERE p.id = {ph()}
             GROUP BY p.id
-            """,
-            (project_id,),
-        ).fetchone()
+        """, (project_id,))
         if not row:
             raise HTTPException(status_code=404, detail="Project not found")
-        return _row_to_project(row, row["doc_count"])
+        return _to_response(row)
     finally:
         conn.close()
 
@@ -101,41 +91,40 @@ def get_project(project_id: int):
 def update_project(project_id: int, body: ProjectUpdate):
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        row = db_fetchone(conn, f"SELECT * FROM projects WHERE id={ph()}", (project_id,))
         if not row:
             raise HTTPException(status_code=404, detail="Project not found")
 
-        fields = []
-        values = []
+        fields, values = [], []
         if body.description is not None:
-            fields.append("description = ?")
+            fields.append(f"description={ph()}")
             values.append(body.description)
         if body.model is not None:
-            fields.append("model = ?")
+            fields.append(f"model={ph()}")
             values.append(body.model)
         if body.top_k is not None:
-            fields.append("top_k = ?")
+            fields.append(f"top_k={ph()}")
             values.append(body.top_k)
 
         if fields:
-            fields.append("updated_at = datetime('now')")
+            from config import get_settings
+            if get_settings().db_driver == "postgres":
+                fields.append("updated_at=NOW()")
+            else:
+                fields.append("updated_at=datetime('now')")
             values.append(project_id)
-            conn.execute(
-                f"UPDATE projects SET {', '.join(fields)} WHERE id = ?", values
-            )
-            conn.commit()
+            db_execute(conn,
+                f"UPDATE projects SET {', '.join(fields)} WHERE id={ph()}",
+                values, commit=True)
 
-        updated = conn.execute(
-            """
+        updated = db_fetchone(conn, f"""
             SELECT p.*, COUNT(d.id) as doc_count
             FROM projects p
             LEFT JOIN documents d ON d.project_id = p.id
-            WHERE p.id = ?
+            WHERE p.id = {ph()}
             GROUP BY p.id
-            """,
-            (project_id,),
-        ).fetchone()
-        return _row_to_project(updated, updated["doc_count"])
+        """, (project_id,))
+        return _to_response(updated)
     finally:
         conn.close()
 
@@ -144,11 +133,10 @@ def update_project(project_id: int, body: ProjectUpdate):
 def delete_project(project_id: int):
     conn = get_connection()
     try:
-        row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+        row = db_fetchone(conn, f"SELECT id FROM projects WHERE id={ph()}", (project_id,))
         if not row:
             raise HTTPException(status_code=404, detail="Project not found")
-        conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
-        conn.commit()
+        db_execute(conn, f"DELETE FROM projects WHERE id={ph()}", (project_id,), commit=True)
         delete_project_index(project_id)
         logger.info("Deleted project id=%d", project_id)
     finally:

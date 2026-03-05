@@ -414,18 +414,25 @@ function closeModalOutside(e, id) {
   if (e.target === document.getElementById(id)) closeModal(id);
 }
 
-// ── Ollama Status ──────────────────────────────────────────────────────────
+// ── LLM Status ────────────────────────────────────────────────────────────────
 async function checkOllama() {
   const el = document.getElementById('ollama-status');
   try {
-    const res = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(3000) });
+    const res = await fetch('/health', { signal: AbortSignal.timeout(5000) });
     if (res.ok) {
-      el.innerHTML = '<span class="status-dot running"></span> Ollama running';
+      const data = await res.json();
+      const provider = (data.llm_provider || 'llm').toUpperCase();
+      if (data.llm_available) {
+        el.innerHTML = `<span class="status-dot running"></span> ${provider} running`;
+      } else {
+        el.innerHTML = `<span class="status-dot stopped"></span> ${provider} offline`;
+        el.title = data.llm_detail || '';
+      }
     } else {
       throw new Error();
     }
   } catch {
-    el.innerHTML = '<span class="status-dot stopped"></span> Ollama offline';
+    el.innerHTML = '<span class="status-dot stopped"></span> LLM offline';
   }
 }
 
