@@ -51,7 +51,7 @@ ollama pull mistral
 python -m uvicorn main:app --reload --host localhost --port 8000
 ```
 
-Then open **http://localhost:8000** in your browser.
+Then open **http://localhost:9000** in your browser.
 
 ---
 
@@ -116,7 +116,7 @@ ragsmith/
 
 ## 🔌 API Reference
 
-Full interactive docs at **http://localhost:8000/docs**
+Full interactive docs at **http://localhost:9000/docs**
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -149,7 +149,7 @@ Run exported instance:
 pip install -r requirements.txt
 ollama pull mistral
 python app.py
-# → http://localhost:8000
+# → http://localhost:9000
 ```
 
 ---
