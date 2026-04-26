@@ -265,6 +265,16 @@ function handleQueryKey(e) {
   }
 }
 
+function pipelineAnimate(phase) {
+  // phase: 1=hybrid active, 2=+rerank active, 3=+eval active, 4/0=all idle
+  const ids = ['ps-hybrid', 'ps-rerank', 'ps-eval'];
+  ids.forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle('stage-active', phase > 0 && i + 1 <= phase && phase < 4);
+  });
+}
+
 async function sendQuery() {
   if (!state.activeProject) return;
   const input = document.getElementById('query-input');
@@ -279,12 +289,18 @@ async function sendQuery() {
   state.chatHistory.push({ role: 'user', content: query });
   renderChat();
 
-  // Add thinking indicator
+  // Add thinking indicator + animate pipeline
   const thinkingId = 'thinking-' + Date.now();
   appendThinking(thinkingId);
+  pipelineAnimate(1);
+  const t2 = setTimeout(() => pipelineAnimate(2), 400);
+  const t3 = setTimeout(() => pipelineAnimate(3), 800);
 
   try {
     const res = await api('POST', `/query/${state.activeProject.id}`, { query });
+    clearTimeout(t2); clearTimeout(t3);
+    pipelineAnimate(4);
+    setTimeout(() => pipelineAnimate(0), 1500);
     removeThinking(thinkingId);
     state.chatHistory.push({
       role: 'ai',
@@ -297,6 +313,8 @@ async function sendQuery() {
     });
     renderChat();
   } catch (e) {
+    clearTimeout(t2); clearTimeout(t3);
+    pipelineAnimate(0);
     removeThinking(thinkingId);
     state.chatHistory.push({ role: 'ai', content: '⚠ ' + e.message, sources: [] });
     renderChat();
@@ -314,59 +332,90 @@ function confidenceEmoji(label) {
 
 function clamp01(v) { return Math.min(1, Math.max(0, v || 0)); }
 
+// Returns a unique id suffix so bars can be animated after DOM insert
+let _cardSeq = 0;
+
 function confidenceBadgeHtml(label, grounding, relevance) {
+  const id    = ++_cardSeq;
   const emoji = confidenceEmoji(label);
   const cls   = `confidence-${label}`;
+  const cardCls = `card-${label}`;
   const gPct  = (clamp01(grounding) * 100).toFixed(1);
   const rPct  = (clamp01(relevance) * 100).toFixed(1);
-  const gW    = (clamp01(grounding) * 100).toFixed(1);
-  const rW    = (clamp01(relevance) * 100).toFixed(1);
+
+  // Conic-gradient gauge colour
+  const gaugeColour = { high: '#2ed573', medium: '#ffa502', low: '#ff4757' }[label] ?? '#535d6b';
+  const gDeg  = Math.round(clamp01(grounding) * 360);
+  const gaugeStyle = `background: conic-gradient(${gaugeColour} ${gDeg}deg, #1a1f28 ${gDeg}deg)`;
 
   return `
-    <div class="confidence-block">
-      <span class="confidence-badge ${cls}">${emoji} ${label} confidence</span>
-    </div>
-    <div class="score-bars">
-      <div class="score-bar-row">
-        <span class="score-bar-label">Grounding</span>
-        <div class="score-bar-track">
-          <div class="score-bar-fill grounding" style="width:${gW}%"></div>
+    <div class="confidence-card ${cardCls}" id="conf-card-${id}">
+      <div class="conf-gauge">
+        <div class="conf-gauge-ring" style="${gaugeStyle}">
+          <span class="conf-gauge-val">${gPct}<span style="font-size:9px">%</span></span>
         </div>
-        <span class="score-bar-value">${gPct}%</span>
+        <span class="conf-gauge-label">${label}</span>
       </div>
-      <div class="score-bar-row">
-        <span class="score-bar-label">Relevance</span>
-        <div class="score-bar-track">
-          <div class="score-bar-fill relevance" style="width:${rW}%"></div>
+      <div class="conf-scores">
+        <div class="conf-badge-row">
+          <span class="confidence-badge ${cls}">${emoji} ${label} confidence</span>
         </div>
-        <span class="score-bar-value">${rPct}%</span>
+        <div class="score-bars">
+          <div class="score-bar-row">
+            <span class="score-bar-label">Grounding</span>
+            <div class="score-bar-track">
+              <div class="score-bar-fill grounding" id="gbar-${id}" style="width:0%"></div>
+            </div>
+            <span class="score-bar-value">${gPct}%</span>
+          </div>
+          <div class="score-bar-row">
+            <span class="score-bar-label">Relevance</span>
+            <div class="score-bar-track">
+              <div class="score-bar-fill relevance" id="rbar-${id}" style="width:0%"></div>
+            </div>
+            <span class="score-bar-value">${rPct}%</span>
+          </div>
+        </div>
       </div>
     </div>`;
+  // Note: bar animation is triggered by animateConfCard(id, gPct, rPct) after DOM insert
+}
+
+function animateConfCard(id, gPct, rPct) {
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      const gb = document.getElementById('gbar-' + id);
+      const rb = document.getElementById('rbar-' + id);
+      if (gb) gb.style.width = gPct + '%';
+      if (rb) rb.style.width = rPct + '%';
+    }, 60);
+  });
 }
 
 function sourceItemHtml(s, i) {
-  const isTop  = s.is_top_source;
-  const rankChange = s.original_rank - i;  // positive = jumped up
+  const isTop = s.is_top_source;
+  const rankChange = s.original_rank - i;
   let rankHtml = '';
   if (s.original_rank !== undefined && s.original_rank !== i) {
     if (rankChange > 0) {
-      rankHtml = `<div class="source-rank-change improved">↑ jumped from rank #${s.original_rank + 1} → #${i + 1} after re-ranking</div>`;
+      rankHtml = `<div class="source-rank-change improved">↑ ${s.original_rank + 1} → ${i + 1} after re-rank</div>`;
     } else {
-      rankHtml = `<div class="source-rank-change dropped">↓ moved from rank #${s.original_rank + 1} → #${i + 1}</div>`;
+      rankHtml = `<div class="source-rank-change dropped">↓ ${s.original_rank + 1} → ${i + 1}</div>`;
     }
   }
 
   return `
     <div class="source-item${isTop ? ' top-source' : ''}">
+      <span class="source-rank-num">#${i + 1}</span>
       <div class="source-file">📄 ${escHtml(s.doc_filename)}</div>
       <div class="source-scores">
-        <span class="source-score-pill">Dense <span>${(s.dense_score || 0).toFixed(4)}</span></span>
-        <span class="source-score-pill">BM25 <span>${(s.bm25_score || 0).toFixed(4)}</span></span>
-        <span class="source-score-pill">RRF <span>${(s.rrf_score || 0).toFixed(6)}</span></span>
-        <span class="source-score-pill">Rerank <span>${(s.rerank_score || 0).toFixed(4)}</span></span>
+        <span class="source-score-pill pill-dense">Dense <span>${(s.dense_score || 0).toFixed(3)}</span></span>
+        <span class="source-score-pill pill-bm25">BM25 <span>${(s.bm25_score || 0).toFixed(3)}</span></span>
+        <span class="source-score-pill pill-rrf">RRF <span>${(s.rrf_score || 0).toFixed(5)}</span></span>
+        <span class="source-score-pill pill-rerank">Rerank <span>${(s.rerank_score || 0).toFixed(3)}</span></span>
       </div>
       ${rankHtml}
-      <div class="source-preview">${escHtml(s.text.substring(0, 200))}…</div>
+      <div class="source-preview">${escHtml(s.text.substring(0, 220))}…</div>
     </div>`;
 }
 
@@ -398,12 +447,13 @@ function renderChat() {
         <div class="chat-msg-label">YOU</div>
         <div class="bubble">${escHtml(msg.content)}</div>`;
     } else {
-      // Confidence + grounding bars (only when we have evaluation data)
-      const hasEval = msg.confidence_label && msg.confidence_label !== 'low' ||
-                      msg.grounding_score > 0 || msg.query_relevance > 0;
-      const evalHtml = (msg.sources?.length && hasEval !== false && msg.confidence_label)
-        ? confidenceBadgeHtml(msg.confidence_label, msg.grounding_score, msg.query_relevance)
+      // Confidence card (always show when sources exist)
+      const gPct   = (clamp01(msg.grounding_score) * 100).toFixed(1);
+      const rPct   = (clamp01(msg.query_relevance)  * 100).toFixed(1);
+      const evalHtml = msg.sources?.length
+        ? confidenceBadgeHtml(msg.confidence_label ?? 'low', msg.grounding_score ?? 0, msg.query_relevance ?? 0)
         : '';
+      const capturedCardSeq = _cardSeq; // capture after confidenceBadgeHtml incremented it
 
       // Sources dropdown
       const sourcesHtml = msg.sources?.length ? `
@@ -419,6 +469,11 @@ function renderChat() {
         <div class="bubble">${escHtml(msg.content)}</div>
         ${evalHtml}
         ${sourcesHtml}`;
+
+      // Trigger bar animation after DOM insert
+      if (msg.sources?.length) {
+        animateConfCard(capturedCardSeq, parseFloat(gPct), parseFloat(rPct));
+      }
     }
     container.appendChild(el);
   });
@@ -463,19 +518,50 @@ async function loadHistory() {
       list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">◷</div><p>No queries yet.</p></div>`;
       return;
     }
-    list.innerHTML = logs.map(l => {
-      const label = l.grounding_score >= 0.75 ? 'high' : l.grounding_score >= 0.50 ? 'medium' : 'low';
-      const emoji = confidenceEmoji(label);
-      const badgeHtml = l.grounding_score > 0
+    const ids = [];
+    list.innerHTML = logs.map((l, idx) => {
+      const label  = l.grounding_score >= 0.75 ? 'high' : l.grounding_score >= 0.50 ? 'medium' : 'low';
+      const emoji  = confidenceEmoji(label);
+      const hasScore = l.grounding_score > 0 || l.query_relevance > 0;
+      const badgeHtml = hasScore
         ? `<span class="history-confidence confidence-${label}">${emoji} ${(l.grounding_score * 100).toFixed(0)}%</span>`
         : '';
+      const gPct = (clamp01(l.grounding_score) * 100).toFixed(1);
+      const rPct = (clamp01(l.query_relevance)  * 100).toFixed(1);
+      ids.push({ idx, gPct, rPct });
+      const miniBars = hasScore ? `
+        <div class="history-scores-row">
+          <div class="history-mini-bar">
+            <span class="history-mini-label">Grounding</span>
+            <div class="history-mini-track"><div class="history-mini-fill grounding" id="hg-${idx}" style="width:0%"></div></div>
+            <span class="history-mini-val">${gPct}%</span>
+          </div>
+          <div class="history-mini-bar">
+            <span class="history-mini-label">Relevance</span>
+            <div class="history-mini-track"><div class="history-mini-fill relevance" id="hr-${idx}" style="width:0%"></div></div>
+            <span class="history-mini-val">${rPct}%</span>
+          </div>
+        </div>` : '';
       return `
         <div class="history-item">
-          <div class="history-query">▸ ${escHtml(l.query_text)} ${badgeHtml}</div>
-          <div class="history-answer">${escHtml(l.response)}</div>
-          <div class="history-meta">${l.created_at} · ${l.num_chunks} chunks retrieved</div>
+          <div class="history-query-row">
+            <div class="history-query">▸ ${escHtml(l.query_text)}</div>
+            ${badgeHtml}
+          </div>
+          ${miniBars}
+          <div class="history-answer">${escHtml(l.response.substring(0, 300))}${l.response.length > 300 ? '…' : ''}</div>
+          <div class="history-meta">${l.created_at.replace('T', ' ').substring(0,16)} · ${l.num_chunks} chunks</div>
         </div>`;
     }).join('');
+    // Animate mini bars
+    requestAnimationFrame(() => setTimeout(() => {
+      ids.forEach(({ idx, gPct, rPct }) => {
+        const hg = document.getElementById('hg-' + idx);
+        const hr = document.getElementById('hr-' + idx);
+        if (hg) hg.style.width = gPct + '%';
+        if (hr) hr.style.width = rPct + '%';
+      });
+    }, 60));
   } catch (e) {
     toast('Failed to load history: ' + e.message, 'error');
   }

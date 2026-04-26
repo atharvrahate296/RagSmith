@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="RAGSmith — Open-source RAG builder with hybrid search, cross-encoder re-ranking, and confidence scoring. Build and evaluate your knowledge base AI." />
 <title>RAGSmith — Open-Source RAG Builder</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;800&display=swap" />
@@ -80,6 +81,13 @@
   <section class="view" id="view-query">
     <div class="view-header">
       <h1>Query <span class="view-subtitle" id="query-project-name"></span></h1>
+    </div>
+    <div class="pipeline-indicator" id="pipeline-indicator">
+      <div class="pipeline-stage" id="ps-hybrid">⬡ Hybrid Search</div>
+      <div class="pipeline-arrow"></div>
+      <div class="pipeline-stage" id="ps-rerank">◈ Re-rank</div>
+      <div class="pipeline-arrow"></div>
+      <div class="pipeline-stage" id="ps-eval">◎ Grounded Gen</div>
     </div>
 
     <div class="chat-container" id="chat-container">
