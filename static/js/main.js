@@ -768,14 +768,16 @@ function sourceItemHtml(s, i) {
 async function checkOllama() {
   const el = document.getElementById('ollama-status');
   try {
-    const res = await fetch('/health');
+    const res = await fetch('/health', { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error();
     const data = await res.json();
-    const provider = (data.llm_provider || 'LLM').toUpperCase();
-    if (data.llm_available) {
-      el.innerHTML = `<span class="status-dot running"></span> ${provider} running`;
-    } else {
-      el.innerHTML = `<span class="status-dot stopped"></span> ${provider} offline`;
-    }
+    const ollamaUp = data.ollama_available;
+    const groqUp   = data.groq_available;
+    el.innerHTML = `
+      <span class="status-dot ${ollamaUp ? 'running' : 'stopped'}"></span> Ollama
+      <span class="status-dot ${groqUp   ? 'running' : 'stopped'}" style="margin-left:6px"></span> Groq
+    `;
+    el.title = data.llm_detail || '';
   } catch {
     el.innerHTML = '<span class="status-dot stopped"></span> LLM offline';
   }

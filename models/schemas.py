@@ -54,6 +54,7 @@ class QueryRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000)
     session_id: Optional[int] = None
     model: Optional[str] = None
+    provider: Optional[str] = None   # 'ollama' | 'groq' — overrides session/project if set
 
 
 class ChunkResult(BaseModel):

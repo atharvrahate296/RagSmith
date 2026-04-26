@@ -54,15 +54,21 @@ def query_project(project_id: int, body: QueryRequest):
         model = body.model
         session_id = body.session_id
 
+        # Resolve provider + model: body → session → project
+        provider = body.provider if hasattr(body, 'provider') and body.provider else None
         if session_id:
             session = db_fetchone(conn, f"SELECT * FROM chat_sessions WHERE id={ph()}", (session_id,))
             if session:
                 if not model:
-                    model = session["model"]
-        
+                    model = session.get("model")
+                if not provider:
+                    provider = session.get("provider")
+
         if not model:
             model = project["model"]
-            
+        if not provider:
+            provider = project.get("provider") or "ollama"
+
         top_k = project["top_k"]
 
         # Fetch history if session_id exists
@@ -105,7 +111,7 @@ def query_project(project_id: int, body: QueryRequest):
             # Convert to (text, score, filename) tuples that generate_answer expects
             llm_chunks = [(c["text"], c["rrf_score"], c["filename"]) for c in reranked]
             try:
-                answer = generate_answer(query=body.query, context_chunks=llm_chunks, model=model, history=history)
+                answer = generate_answer(query=body.query, context_chunks=llm_chunks, model=model, provider=provider, history=history)
             except (ConnectionError, RuntimeError) as exc:
                 logger.error("LLM generation failed: %s", exc)
                 raise HTTPException(status_code=503, detail=f"LLM error: {str(exc)}")
