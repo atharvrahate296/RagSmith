@@ -1,0 +1,67 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# RAGSmith – docker-compose.yml
+# Local development with optional PostgreSQL
+#
+# SQLite mode (default):
+#   docker compose up app
+#
+# PostgreSQL mode:
+#   docker compose --profile postgres up
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: "3.9"
+
+services:
+
+  # ── RAGSmith app ────────────────────────────────────────────────────────────
+  app:
+    build: .
+    image: ragsmith:latest
+    container_name: ragsmith_app
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist FAISS indexes, chunks, uploads, and SQLite DB across restarts
+      - ragsmith_data:/app/data
+      - ragsmith_exports:/app/exports
+      # Mount .env file from host
+      - ./.env:/app/.env:ro
+    environment:
+      - APP_ENV=development
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── PostgreSQL (optional, activate with --profile postgres) ─────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: ragsmith_postgres
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: ragsmith
+      POSTGRES_PASSWORD: ragsmith_dev_password
+      POSTGRES_DB: ragsmith
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ragsmith -d ragsmith"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  ragsmith_data:
+  ragsmith_exports:
+  postgres_data:

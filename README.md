@@ -48,7 +48,7 @@ ollama pull mistral
 ### 4. Run RAGSmith
 
 ```bash
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn main:app --reload --host localhost --port 8000
 ```
 
 Then open **http://localhost:8000** in your browser.
@@ -106,7 +106,7 @@ ragsmith/
 ├── templates/
 │   └── index.html         # Main HTML template
 └── data/                  # Auto-created at runtime
-    ├── ragsmith.db        # SQLite database
+    ├── ragsmith22.db        # SQLite database
     ├── indexes/           # FAISS .index files
     ├── chunks/            # Chunk metadata pickles
     └── uploads/           # Original uploaded files

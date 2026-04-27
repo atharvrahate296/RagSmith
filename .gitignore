@@ -1,23 +1,37 @@
-# Python Environments
+# ── Secrets — NEVER commit these ─────────────────────────────────────────────
+.env
+*.key
+*.pem
+
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
-.venv/
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
 venv/
-.env
+.venv/
+env/
+
+# ── RAGSmith runtime data — stays on server, not in git ──────────────────────
 data/
 exports/
-logs/
-# [cite_start]RAGSmith Database [cite: 23]
-*.sqlite
-*.db
 
-# [cite_start]RAGSmith Vector Indexes [cite: 46, 54, 71]
-faiss.index
-*.index
+# ── IDE / OS ──────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
 
-# [cite_start]RAGSmith Local Chunk Persistence [cite: 47, 55, 72]
-chunks.pkl
-*.pkl
+# ── Testing ───────────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
 
-# [cite_start]RAGSmith Downloaded Embedding Models [cite: 29, 73]
-embedding_model/
+.ragebot/
