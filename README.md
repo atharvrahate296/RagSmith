@@ -175,6 +175,12 @@ RAGSmith demonstrates mastery of:
 - Efficient local AI deployment without cloud dependency
 
 ---
+## Contributors
+
+- [Atharv Rahate](https://github.com/atharvrahate296)
+- [Rohan Kokatre](https://github.com/rohan1252030019-netizen)
+- [Krushnansh Meher](https://github.com/Krushnansh22)
+---
 
 ## 📄 License
 
